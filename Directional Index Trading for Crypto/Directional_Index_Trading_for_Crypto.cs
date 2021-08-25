@@ -134,13 +134,13 @@ namespace Directional_Index_Trading_for_Crypto
         public double prevLow;
         public double prevLow2;
         public double slPrice = 0;
-        private int lossStreak = 0;
+        private int shortLossStreak = 0;
         public int numBars;
         public double startAccVal;
         private double orderPeriod;
         public double trailPrice;
         private double BEPtsAbove;
-        private double CurrMaxRisk;
+        private double CurrMaxShortRisk;
         private double lOrders;
         private double sOrders;
         private double PlOrders;
@@ -176,12 +176,18 @@ namespace Directional_Index_Trading_for_Crypto
             this.longIndicatorATR = Core.Indicators.BuiltIn.ATR(Period2, MAType);
             this.shortIndicatorDMI = Core.Indicators.BuiltIn.DMI(Period2, MAType);
             this.shortIndicatorATR = Core.Indicators.BuiltIn.ATR(Period2, MAType);
+
+            if (Core.Positions.Length != 0)
+            {
+                Log("Error! Position opened without SL! ", StrategyLoggingLevel.Error);
+                Stop();
+            }
         }
 
         protected override void OnRun()
         {
             
-            CurrMaxRisk = maxRisk;
+            CurrMaxShortRisk = maxRisk;
             if (symbol1 == null || account == null || symbol1.ConnectionId != account.ConnectionId)
             {
                 Log("Incorrect input parameters... symbol1 or Account are not specified or they have diffent connectionID.", StrategyLoggingLevel.Error);
@@ -210,7 +216,7 @@ namespace Directional_Index_Trading_for_Crypto
             Core.TradeAdded += UpdateTime;
             Tomorrow = symbol1.LastDateTime.FromSelectedTimeZoneToUtc().AddDays(1).Date;
             Core.PositionRemoved += Core_PositionRemoved;
-            _historicalLongData.NewHistoryItem += this.historicalData_NewHistoryItem;
+            _historicalLongData.NewHistoryItem += historicalData_NewHistoryItem;
             _historicalShortData.NewHistoryItem += _historicalShortData_NewHistoryItem;
             PtsAbove /= 40000;
             Log("Strategy has began running");
@@ -226,7 +232,6 @@ namespace Directional_Index_Trading_for_Crypto
             /*MarketOpen = new DateTime(symbol1.LastDateTime.FromSelectedTimeZoneToUtc().AddDays(1).Year, symbol1.LastDateTime.FromSelectedTimeZoneToUtc().AddDays(1).Month, symbol1.LastDateTime.FromSelectedTimeZoneToUtc().AddDays(1).Day, 1, 0, 0);
             MarketClose = MarketOpen.AddHours(1);*/
                 
-
             if ((CircuitBreakerHit == true && LimMax <= maxRisk + 1) /*|| (symbol1.LastDateTime.FromSelectedTimeZoneToUtc().Date > Tomorrow && CircuitBreakerHit == false)*/)
             {
                 Log("Resetting Daily Stop Loss");
@@ -235,13 +240,17 @@ namespace Directional_Index_Trading_for_Crypto
                 CircuitBreakerHit = false;
                 Tomorrow = symbol1.LastDateTime.FromSelectedTimeZoneToUtc().AddDays(1).Date;
             }
-            var symbLast = symbol1.LastDateTime.FromSelectedTimeZoneToUtc();
+            if (Core.Positions.Length != 0 && orderPeriod == 188)
+            {
+                numBars++;
+            }
             /*if (LowMovementFinish == null)
             {
                 LowMovementBegin = new DateTime(symbLast.Year, symbLast.Month, symbLast.Day, 22, 45, 0);
                 LowMovementFinish = LowMovementBegin.Add(new TimeSpan(1, 30, 0));
             }
-            StrategyProcess(true);*/
+            */
+            StrategyProcess(true);
         }
 
         private void Core_PositionRemoved(Position pos)
@@ -251,7 +260,7 @@ namespace Directional_Index_Trading_for_Crypto
                 Log("Account Value exceeds daily loss limit", StrategyLoggingLevel.Error);
                 CircuitBreakerHit = true;
 
-                LowMovementBegin = symbol1.LastDateTime.FromSelectedTimeZoneToUtc(); // Cuts off trading until next day
+                LowMovementFinish = symbol1.LastDateTime.FromSelectedTimeZoneToUtc().AddHours(10); // Cuts off trading until next day
                 startAccVal = account.Balance;
                 LimMax -= LimDecrease;
                 DecreaseNum++;
@@ -263,8 +272,8 @@ namespace Directional_Index_Trading_for_Crypto
 
         private void UpdateTime(Trade pos) // Will not work if given a set time, as LowMovementFinish will change to a later date.
         {
-            var symbLast = symbol1.LastDateTime.FromSelectedTimeZoneToUtc();
             
+
             if (LstreakPause)
             {
                 ChangeLStreak(pos);
@@ -282,7 +291,7 @@ namespace Directional_Index_Trading_for_Crypto
 
         private void historicalData_NewHistoryItem(object sender, HistoryEventArgs e)
         {
-            numBars++;
+
             if (CircuitBreakerHit == true && LimMax <= maxRisk + 1)
             {
                 Log("Resetting Daily Stop Loss");
@@ -291,13 +300,9 @@ namespace Directional_Index_Trading_for_Crypto
                 CircuitBreakerHit = false;
                 Tomorrow = symbol1.LastDateTime.FromSelectedTimeZoneToUtc().AddDays(1).Date;
             }
-            if (Core.Positions.Length != 0 && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() >= MarketClose.AddMinutes(-30))
+            if (Core.Positions.Length != 0 && orderPeriod == 159)
             {
-                foreach(Position pos in Core.Positions)
-                {
-                    pos.Close();
-                }
-                Log("All Positions closed before close");
+                numBars++;            
             }
             StrategyProcess(false);
 
@@ -316,18 +321,9 @@ namespace Directional_Index_Trading_for_Crypto
                     numBars = 0;
                 }
             }
-            else if (symbol1.LastDateTime.FromSelectedTimeZoneToUtc() >= LowMovementBegin && Core.Positions.Length != 0)
-            {
-                foreach (Position pos in Core.Positions)
-                {
-                    pos.Close();
-                }
-                Log("Positions closed as time is after chosen time.");
-                return;
-            }
-
             if (isDMIFlat() != DMIFlat.Neither)
             {
+                
                 prevHigh = Math.Round(((HistoryItemBar)_historicalShortData[1]).High *2, MidpointRounding.ToEven)/2;
                 prevHigh2 = Math.Round(((HistoryItemBar)_historicalShortData[2]).High *2,MidpointRounding.ToEven)/2;
                 prevLow = Math.Round(((HistoryItemBar)_historicalLongData[1]).Low * 2, MidpointRounding.ToEven) / 2;
@@ -335,43 +331,41 @@ namespace Directional_Index_Trading_for_Crypto
 
                 if (Core.Instance.Positions.Length != 0)
                 {
-                    foreach (Position pos in Core.Instance.Positions)
-                    {
-                        if(((isDMIFlat() == DMIFlat.Long && pos.Side == Side.Buy) || (isDMIFlat() == DMIFlat.Short && pos.Side == Side.Sell)) && symbol1.LastDateTime.FromSelectedTimeZoneToUtc().Subtract(pos.OpenTime.FromSelectedTimeZoneToUtc()).TotalSeconds > orderPeriod) {
-                            TradingOperationResult result = Core.Instance.ClosePosition(pos, pos.Quantity);
-
-                            if (result.Status == TradingOperationResultStatus.Success)
-                            {
-                                Log($"{result.Status}. Position was closed", StrategyLoggingLevel.Info);
-                            }
-                            foreach (Order o in Core.Orders)
-                            {
-                                o.Cancel();
-                            }
-                            Log("Orders cancelled");
+                    var pos = Core.Positions[0];
+                    if(((isDMIFlat() == DMIFlat.Short && pos.Side == Side.Buy) || (isDMIFlat() == DMIFlat.Long && pos.Side == Side.Sell)) && symbol1.LastDateTime.FromSelectedTimeZoneToUtc().Subtract(pos.OpenTime.FromSelectedTimeZoneToUtc()).TotalSeconds > orderPeriod) {
+                        
+                        TradingOperationResult result = Core.Instance.ClosePosition(pos, pos.Quantity);
+                        if (result.Status == TradingOperationResultStatus.Success)
+                        {
+                            Log($"{result.Status}. Position was closed", StrategyLoggingLevel.Info);
                         }
+                        foreach(Order o in Core.Orders)
+                        {
+                            o.Cancel();
+                        }
+                        Log("Orders Cancelled");
+                    }
+                    else
+                    {
+                        return;
                     }
                     //TimeAfterPos = symbol1.LastDateTime.AddMinutes(minutesbeforenew)
 
                 }
-                if(Core.Positions.Length != 0)
+                if(symbol1.Change < 0)
                 {
-                    return;
-                }
-                if(avShort >= avLong)
-                {
-                    if ((TradeDir == 0 || TradeDir == 2) && prevHigh2 > prevHigh && (((HistoryItemBar)_historicalShortData[1]).Close - ((HistoryItemBar)_historicalShortData[1]).Open) > 0 && (((HistoryItemBar)_historicalShortData[2]).Close - ((HistoryItemBar)_historicalShortData[2]).Open > 0))
+                    if (prevHigh2 > prevHigh && (((HistoryItemBar)_historicalShortData[1]).Close - ((HistoryItemBar)_historicalShortData[1]).Open) > 0 && (((HistoryItemBar)_historicalShortData[2]).Close - ((HistoryItemBar)_historicalShortData[2]).Open > 0) && isDMIFlat() == DMIFlat.Long)
                     {
-                        if (isShort && !(symbol1.LastDateTime.FromSelectedTimeZoneToUtc() < LowMovementBegin && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish))
+                        if (isShort && (TradeDir == 0 || TradeDir == 2) && (CircuitBreakerHit == false || symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish))
                         {
                             CircuitBreakerHit = false;
                             CreateLimitOrder(Side.Sell, false);
                         }
 
                     }
-                    else if ((TradeDir == 0 || TradeDir == 1) && prevLow2 < prevLow && (((HistoryItemBar)_historicalLongData[1]).Close - ((HistoryItemBar)_historicalLongData[1]).Open) < 0 && (((HistoryItemBar)_historicalLongData[2]).Close - ((HistoryItemBar)_historicalLongData[2]).Open < 0))
+                    else if (prevLow2 < prevLow && (((HistoryItemBar)_historicalLongData[1]).Close - ((HistoryItemBar)_historicalLongData[1]).Open) < 0 && (((HistoryItemBar)_historicalLongData[2]).Close - ((HistoryItemBar)_historicalLongData[2]).Open < 0) && isDMIFlat() == DMIFlat.Short)
                     {
-                        if (!isShort && !(symbol1.LastDateTime.FromSelectedTimeZoneToUtc() < LowMovementBegin && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish)) // This can be removed once realtime streaming begins
+                        if (!isShort && (TradeDir == 0 || TradeDir == 1) && (CircuitBreakerHit == false || symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish)) // This can be removed once realtime streaming begins
                         {
                             CircuitBreakerHit = false;
                             CreateLimitOrder(Side.Buy, false);
@@ -381,16 +375,16 @@ namespace Directional_Index_Trading_for_Crypto
 
                 } else
                 {
-                    if ((TradeDir == 0 || TradeDir == 1) && prevLow2 < prevLow && (((HistoryItemBar)_historicalLongData[1]).Close - ((HistoryItemBar)_historicalLongData[1]).Open) < 0 && (((HistoryItemBar)_historicalLongData[2]).Close - ((HistoryItemBar)_historicalLongData[2]).Open < 0))
+                    if (prevLow2 < prevLow && (((HistoryItemBar)_historicalLongData[1]).Close - ((HistoryItemBar)_historicalLongData[1]).Open) < 0 && (((HistoryItemBar)_historicalLongData[2]).Close - ((HistoryItemBar)_historicalLongData[2]).Open < 0) && isDMIFlat() == DMIFlat.Short)
                     {
-                        if (!isShort && !(symbol1.LastDateTime.FromSelectedTimeZoneToUtc() < LowMovementBegin && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish)) // This can be removed once realtime streaming begins
+                        if (!isShort && (TradeDir == 0 || TradeDir == 1) && (CircuitBreakerHit == false || symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish)) // This can be removed once realtime streaming begins
                         {
                             CircuitBreakerHit = false;
                             CreateLimitOrder(Side.Buy, false);
                         }
-                    } else if ((TradeDir == 0 || TradeDir == 2) && prevHigh2 > prevHigh && (((HistoryItemBar)_historicalShortData[1]).Close - ((HistoryItemBar)_historicalShortData[1]).Open) > 0 && (((HistoryItemBar)_historicalShortData[2]).Close - ((HistoryItemBar)_historicalShortData[2]).Open > 0))
+                    } else if (prevHigh2 > prevHigh && (((HistoryItemBar)_historicalShortData[1]).Close - ((HistoryItemBar)_historicalShortData[1]).Open) > 0 && (((HistoryItemBar)_historicalShortData[2]).Close - ((HistoryItemBar)_historicalShortData[2]).Open > 0) && isDMIFlat() == DMIFlat.Long)
                     {
-                        if (isShort && !(symbol1.LastDateTime.FromSelectedTimeZoneToUtc() < LowMovementBegin && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish))
+                        if (isShort && (TradeDir == 0 || TradeDir == 2) && (CircuitBreakerHit == false || symbol1.LastDateTime.FromSelectedTimeZoneToUtc() > LowMovementFinish))
                         {
                             CircuitBreakerHit = false;
                             CreateLimitOrder(Side.Sell, false);
@@ -403,31 +397,21 @@ namespace Directional_Index_Trading_for_Crypto
 
         public void CreateLimitOrder(Side side, bool isShort, double Amm = 0)
         {
-            if (CircuitBreakerHit && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() < MarketOpen)
+            if (CircuitBreakerHit && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() < LowMovementFinish)
             {
                 Log("Circuit Breaker hit inside CreateLimitOrder. Time: " + symbol1.LastDateTime.FromSelectedTimeZoneToUtc().ToString());
                 return;
             }
-            try
-            {
-                if (symbol1.LastDateTime.FromSelectedTimeZoneToUtc() >= MarketClose.AddMinutes(-30) && symbol1.LastDateTime.FromSelectedTimeZoneToUtc() <= MarketOpen)
-                {
-                    Log("No position entered. Too close to market close.");
-                    return;
-                }
-            } catch(Exception e)
-            {
-                Log(MarketClose + " , Error: " + e.ToString());
-            }
+                    
             if (LstreakPause)
             {
                 if (Tradesat0Risk > 3)
                 {
-                    CurrMaxRisk = maxRisk;
+                    CurrMaxShortRisk = maxRisk;
                     Tradesat0Risk = 0;
-                    lossStreak = 0;
+                    shortLossStreak = 0;
                 }
-                else if (lossStreak > 3 || (Tradesat0Risk <= 3 && Tradesat0Risk > 0))
+                else if (shortLossStreak > 3 || (Tradesat0Risk <= 3 && Tradesat0Risk > 0))
                 {
 
                     if (Tradesat0Risk == 0)
@@ -439,15 +423,12 @@ namespace Directional_Index_Trading_for_Crypto
                     return;
                 }
             }
-
-            /* else if (symbol1.LastDateTime < TimeAfterPos)
-            {
-                Log("Too Early to open another trade");
+            if(CurrMaxShortRisk <= 0.75){
+                LstreakPause = true;
                 return;
-            }*/
+            }
             if (_operationResult != null)
-            {
-                Log("Problem lies here");
+            { 
                 if (Core.GetPositionById(_operationResult.OrderId, symbol1.ConnectionId) != null)
                     return;
 
@@ -455,36 +436,33 @@ namespace Directional_Index_Trading_for_Crypto
                 if (order != null)
                 {
                     order.Cancel();
+                    numBars = 0;
                     Log("Order was canceled.", StrategyLoggingLevel.Trading);
                 }
             }
             var sign = (side == Side.Buy) ? -1 : 1;
-
+            if (account.Balance <= 0)
+            {
+                Log("Trading Error: Account Balance less than 0!", StrategyLoggingLevel.Error);
+            }
             double orderPrice;
-            Log("Bid: " + symbol1.Bid + ", Ask: " + symbol1.Ask);
-            Log("Percent Above/Below: " + PtsAbove);
             //orderPrice =  (side == Side.Buy) ? symbol1.Bid * (1 +  sign * PtsAbove) : symbol1.Ask * (1 + sign * PtsAbove);
             orderPrice = Math.Round(symbol1.Last * (1 + sign * PtsAbove)*2, MidpointRounding.ToEven)/2;
-            //orderPrice = Math.Round(((side == Side.Buy ? ((HistoryItemBar)_historicalLongData[1]).Low : ((HistoryItemBar)_historicalLongData[1]).High) + sign * x) * symbol1.TickSize, MidpointRounding.ToEven)/symbol1.TickSize;
-
-
-            /*var lowOrder = orderPrice - prevLow2 + (x * symbol1.TickSize);
-            var highOrder = prevHigh2 - orderPrice + (x * symbol1.TickSize);*/
 
             var indRounded = Math.Round((longIndicatorATR.GetValue(1) / z) * (symbol1.TickSize >= 1 ? symbol1.TickSize : 1 / symbol1.TickSize), MidpointRounding.ToEven) / (symbol1.TickSize >= 1 ? symbol1.TickSize : 1 / symbol1.TickSize);
             slPrice =  indRounded;
 
 
             double Amount = 1;
-            Amount = Math.Round(CurrMaxRisk * account.Balance / (100 * slPrice), 3);
-
+            Amount = Math.Round(CurrMaxShortRisk * account.Balance / (100 * slPrice), 3);
+            Log("Amount: " + Amount);
             if (Amount == 0)
             {
                 Log("Trading failed. 0 Amount size");
                 Stop();
             }
-            var StopL = SlTpHolder.CreateSL(slPrice, PriceMeasurement.Offset);
-            var TakeP = SlTpHolder.CreateTP(y * slPrice, PriceMeasurement.Offset);
+            var StopL = SlTpHolder.CreateSL(slPrice * 100, PriceMeasurement.Offset);
+            var TakeP = SlTpHolder.CreateTP(y * slPrice * 100, PriceMeasurement.Offset);
             if (Amount > 0)
             {
                 _operationResult = Core.Instance.PlaceOrder(new PlaceOrderRequestParameters
@@ -510,7 +488,7 @@ namespace Directional_Index_Trading_for_Crypto
 
             trailPrice = Math.Round(orderPrice + sign * slPrice, MidpointRounding.ToEven);
             BEPtsAbove = orderPrice + PtsAbove * symbol1.Last;
-            //PtsAbove = slPrice + 10 * symbol1.TickSize;
+            
             numBars = 0;
             var formattedSide = string.Empty;
             if (side == Side.Buy)
@@ -585,12 +563,11 @@ namespace Directional_Index_Trading_for_Crypto
             {
                 if (pos.GrossPnl.Value <= 0)
                 {
-                    lossStreak++;
-
-                    CurrMaxRisk -= RiskDir * 0.5;
+                    CurrMaxShortRisk -= RiskDir * 0.5;
                     if (pos.Side == Side.Buy)
                     {
                         PsOrders += pos.GrossPnl.Value;
+                        shortLossStreak++;
                     }
                     else
                     {
@@ -598,7 +575,7 @@ namespace Directional_Index_Trading_for_Crypto
                     }
                     avLong = (PlOrders/lOrders == double.PositiveInfinity | PlOrders/lOrders == double.NaN ? 0 : Math.Round(PlOrders/lOrders, 2));
                     avShort =  PsOrders/sOrders == double.PositiveInfinity | PsOrders / sOrders == double.NaN ? 0 : Math.Round(PsOrders / sOrders, 2);
-                    Log("Max risk changed: " + CurrMaxRisk);
+                    Log("Max risk changed: " + CurrMaxShortRisk);
                 }
                 else
                 {
@@ -617,8 +594,8 @@ namespace Directional_Index_Trading_for_Crypto
                     }
                     avLong = (PlOrders / lOrders == double.PositiveInfinity | PlOrders / lOrders == double.NaN ? 0 : Math.Round(PlOrders / lOrders, 2));
                     avShort = PsOrders / sOrders == double.PositiveInfinity | PsOrders / sOrders == double.NaN ? 0 : Math.Round(PsOrders / sOrders, 2);
-                    lossStreak = 0;
-                    CurrMaxRisk = maxRisk;
+                    shortLossStreak = 0;
+                    CurrMaxShortRisk = maxRisk;
                 }
             }
             
