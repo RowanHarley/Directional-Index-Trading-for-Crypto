@@ -137,8 +137,8 @@ namespace Directional_Index_Trading_for_Crypto
         public double prevHigh2;
         public double prevLow;
         public double prevLow2;
-        public double MakerFee = -0.025;
-        public double TakerFee = 0.075;
+        public double MakerFee = -0.025/100;
+        public double TakerFee = 0.075/100;
         public double totalRebate = 0;
         public double slPrice = 0;
         public double totBitcoin = 0;
@@ -154,6 +154,7 @@ namespace Directional_Index_Trading_for_Crypto
         private double PlOrders = 0;
         private double PsOrders = 0;
         private int DecreaseNum;
+        private Connection vendorName;
         private bool isRebated;
         private DateTime Tomorrow;
         private bool CircuitBreakerHit = false;
@@ -198,7 +199,7 @@ namespace Directional_Index_Trading_for_Crypto
             }
             account.NettingType = NettingType.OnePosition;
 
-            var vendorName = Core.Connections.Connected.FirstOrDefault(c => c.Id == symbol1.ConnectionId);
+            vendorName = Core.Connections.Connected.FirstOrDefault(c => c.Id == symbol1.ConnectionId);
             var isLimitSupported = Core.GetOrderType(OrderType.Limit, symbol1.ConnectionId) != null;
             startAccVal = account.Balance;
             Log("Account Beginning Value: " + startAccVal);
@@ -237,32 +238,36 @@ namespace Directional_Index_Trading_for_Crypto
             if (t.PositionImpactType == PositionImpactType.Close) {
                 if (t.OrderTypeId == OrderType.Limit &&  isRebated == false)
                 {
-                    totalRebate -= Math.Abs(t.Quantity) * 100 / (MakerFee + TakerFee);
+                    totalRebate -= MakerFee * Math.Abs(t.Quantity)/ (MakerFee + TakerFee);
                     if (DebugMode)
-                        Log("Total Rebate: " + totalRebate);
+                        Log("Total Rebate: " + totalRebate + ", Amount: " + Math.Abs(t.Quantity) / (MakerFee + TakerFee));
                 } 
                 else if (t.OrderTypeId == OrderType.Stop || t.OrderTypeId == OrderType.Market && isRebated == false)
                 {
-                    totalRebate -= TakerFee / 100 * (Math.Abs(t.Quantity) * 100/(MakerFee+TakerFee));
+                    totalRebate -= TakerFee * (Math.Abs(t.Quantity)/(MakerFee+TakerFee));
                     if (DebugMode)
-                        Log("Total Rebate: " + totalRebate);
+                        Log("Total Rebate: " + totalRebate + ", Amount: " + Math.Abs(t.Quantity)/ (MakerFee + TakerFee));
                 } 
                 else
                 {
-                    totalRebate -= MakerFee / 100 * Math.Abs(t.Quantity);
+                    totalRebate -= MakerFee* Math.Abs(t.Quantity);
                     if (DebugMode)
-                        Log("Total Rebate: " + totalRebate);
+                        Log("Total Rebate: " + totalRebate + ", Amount: " + Math.Abs(t.Quantity) / (MakerFee + TakerFee));
                 }
             }
             else
             {
                 if (!isRebated)
                 {
-                    totalRebate -= Math.Abs(t.Quantity) * 100 / (MakerFee + TakerFee);
+                    totalRebate -= MakerFee * Math.Abs(t.Quantity) / (MakerFee + TakerFee);
+                    if(DebugMode)
+                        Log("Total Rebate: " + totalRebate + ", Amount: " + Math.Abs(t.Quantity) / (MakerFee + TakerFee));
                 }
                 else
                 {
-
+                    totalRebate -= MakerFee * Math.Abs(t.Quantity);
+                    if(DebugMode)
+                        Log("Total Rebate: " + totalRebate + ", Amount: " + Math.Abs(t.Quantity)/ (MakerFee + TakerFee));
                 }
                 
             }
@@ -363,31 +368,18 @@ namespace Directional_Index_Trading_for_Crypto
                 var sign = pos.Side == Side.Buy ? -1 : 1;
                 if (isClosePos(pos, _historicalSecData) == ClosePos.Close && symbol1.LastDateTime.FromSelectedTimeZoneToUtc().Subtract(pos.OpenTime.FromSelectedTimeZoneToUtc()).TotalSeconds > rndNum)
                 {
-                    var order1 = new PlaceOrderRequestParameters
+                    TradingOperationResult result = Core.PlaceOrder(new PlaceOrderRequestParameters
                     {
                         Account = account,
                         Symbol = symbol1,
-                        Side = (pos.Side == Side.Buy ? Side.Sell : Side.Buy),
-                        Quantity = pos.Quantity,
-                        Price = (pos.Side == Side.Buy ? symbol1.Ask + sign * Math.Round(indicatorATR.GetValue() / 15, 2) : symbol1.Bid + sign * Math.Round(indicatorATR.GetValue() / 15, 2)),
-                        OrderTypeId = OrderType.Limit
-                    };
-                    var order2 = new PlaceOrderRequestParameters
-                    {
-                        Account = account,
-                        Symbol = symbol1,
-                        Side = (pos.Side == Side.Buy ? Side.Sell : Side.Buy),
-                        Quantity = pos.Quantity,
-                        TriggerPrice = (pos.Side == Side.Buy ? symbol1.Ask + sign * Math.Round(indicatorATR.GetValue()/10, 2) : symbol1.Bid + sign * Math.Round(indicatorATR.GetValue() / 10, 2)),
-                        OrderTypeId = OrderType.Stop
-                    };
-                    TradingOperationResult result = Core.Connections.Connected[0].PlaceMultiOrder(new PlaceMultiOrderOrderRequestParameters { 
-                        OrderParameters = new PlaceOrderRequestParameters[] {order1, order2},
-                        GroupOrderType = GroupOrderType.OCO
+                        Side = pos.Side == Side.Buy ? Side.Sell : Side.Buy,
+                        Price = pos.Side == Side.Buy ? symbol1.Ask : symbol1.Ask,
+                        OrderTypeId = OrderType.Limit,
+                        Quantity = pos.Quantity
                     });
                     if (result.Status != TradingOperationResultStatus.Success)
                     {
-                        Log($"{result.Status}. Position was closed", StrategyLoggingLevel.Error);
+                        Log($"{result.Message}. Position was closed", StrategyLoggingLevel.Error);
                     }
                 }
             }
@@ -486,12 +478,16 @@ namespace Directional_Index_Trading_for_Crypto
 
 
             double Amount = Math.Round(CurrMaxRisk * account.Balance / (100 * slPrice), 3);
-            if (Amount * (MakerFee + TakerFee)/100 > totalRebate)
+            if (DebugMode)
+                Log("Original Amount: " + Amount);
+            if (Amount * (MakerFee + TakerFee) > totalRebate)
             {
-                Amount *= 1 - ((MakerFee + TakerFee)/100);
+                Amount *= 1 - (MakerFee + TakerFee);
                 Amount = Math.Floor(Amount * 1000)/1000;
                 isRebated = true;
             }
+            if (DebugMode)
+                Log("Current Amount: " + Amount);
             /*if (Amount * symbol1.Last > 20 * account.Balance)
                 Amount = Math.Round(20 * account.Balance / symbol1.Last, 3);*/
 
