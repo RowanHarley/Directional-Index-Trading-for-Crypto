@@ -249,10 +249,22 @@ namespace Directional_Index_Trading_for_Crypto
                 } 
                 else
                 {
-                    totalRebate -= MakerFee * 2 / 100 * Math.Abs(t.Quantity);
+                    totalRebate -= MakerFee / 100 * Math.Abs(t.Quantity);
                     if (DebugMode)
                         Log("Total Rebate: " + totalRebate);
                 }
+            }
+            else
+            {
+                if (!isRebated)
+                {
+                    totalRebate -= Math.Abs(t.Quantity) * 100 / (MakerFee + TakerFee);
+                }
+                else
+                {
+
+                }
+                
             }
         }
 
@@ -273,6 +285,10 @@ namespace Directional_Index_Trading_for_Crypto
                 LimMax -= LimDecrease;
                 DecreaseNum++;
                 return;
+            }
+            foreach(Order o in Core.Orders)
+            {
+                o.Cancel();
             }
 
         }
@@ -344,32 +360,34 @@ namespace Directional_Index_Trading_for_Crypto
             {
 
                 var pos = Core.Positions[0];
+                var sign = pos.Side == Side.Buy ? -1 : 1;
                 if (isClosePos(pos, _historicalSecData) == ClosePos.Close && symbol1.LastDateTime.FromSelectedTimeZoneToUtc().Subtract(pos.OpenTime.FromSelectedTimeZoneToUtc()).TotalSeconds > rndNum)
                 {
-                    /*TradingOperationResult result = Core.Instance.PlaceOrder(new PlaceOrderRequestParameters
+                    var order1 = new PlaceOrderRequestParameters
                     {
-                        Symbol = symbol1,
                         Account = account,
+                        Symbol = symbol1,
                         Side = (pos.Side == Side.Buy ? Side.Sell : Side.Buy),
-                        Price = (pos.Side == Side.Buy ? symbol1.Ask + 1 : symbol1.Bid + 1),
                         Quantity = pos.Quantity,
-                        OrderTypeId = OrderType.Limit,
-                    });*/
-                    TradingOperationResult result = Core.Instance.ClosePosition(new ClosePositionRequestParameters
+                        Price = (pos.Side == Side.Buy ? symbol1.Ask + sign * Math.Round(indicatorATR.GetValue() / 15, 2) : symbol1.Bid + sign * Math.Round(indicatorATR.GetValue() / 15, 2)),
+                        OrderTypeId = OrderType.Limit
+                    };
+                    var order2 = new PlaceOrderRequestParameters
                     {
-                        Position = pos,
-                        CloseQuantity = pos.Quantity,
+                        Account = account,
+                        Symbol = symbol1,
+                        Side = (pos.Side == Side.Buy ? Side.Sell : Side.Buy),
+                        Quantity = pos.Quantity,
+                        TriggerPrice = (pos.Side == Side.Buy ? symbol1.Ask + sign * Math.Round(indicatorATR.GetValue()/10, 2) : symbol1.Bid + sign * Math.Round(indicatorATR.GetValue() / 10, 2)),
+                        OrderTypeId = OrderType.Stop
+                    };
+                    TradingOperationResult result = Core.Connections.Connected[0].PlaceMultiOrder(new PlaceMultiOrderOrderRequestParameters { 
+                        OrderParameters = new PlaceOrderRequestParameters[] {order1, order2},
+                        GroupOrderType = GroupOrderType.OCO
                     });
-
                     if (result.Status != TradingOperationResultStatus.Success)
                     {
                         Log($"{result.Status}. Position was closed", StrategyLoggingLevel.Error);
-                    }
-                    
-                    
-                    foreach (Order o in Core.Orders)
-                    {
-                        o.Cancel();
                     }
                 }
             }
@@ -468,16 +486,11 @@ namespace Directional_Index_Trading_for_Crypto
 
 
             double Amount = Math.Round(CurrMaxRisk * account.Balance / (100 * slPrice), 3);
-            if (Amount * (MakerFee + TakerFee)/100 < totalRebate)
+            if (Amount * (MakerFee + TakerFee)/100 > totalRebate)
             {
-                totalRebate -= Amount * MakerFee / 100 ;
-                if (DebugMode)
-                    Log("Maker Fee: " + MakerFee / 100 + "%");
                 Amount *= 1 - ((MakerFee + TakerFee)/100);
                 Amount = Math.Floor(Amount * 1000)/1000;
                 isRebated = true;
-                if (DebugMode)
-                    Log("Total Rebate: " + totalRebate + ", with Order Amount: " + Amount);
             }
             /*if (Amount * symbol1.Last > 20 * account.Balance)
                 Amount = Math.Round(20 * account.Balance / symbol1.Last, 3);*/
