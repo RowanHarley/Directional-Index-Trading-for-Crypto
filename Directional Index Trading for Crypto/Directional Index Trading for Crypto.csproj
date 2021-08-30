@@ -17,7 +17,7 @@
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
-    <OutputPath>..\..\..\..\AMP Quantower\Settings\Scripts\Strategies\</OutputPath>
+    <OutputPath>..\..\..\..\Quantower\Settings\Scripts\Strategies\</OutputPath>
     <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
@@ -26,12 +26,15 @@
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
+    <OutputPath>..\..\..\..\Quantower\Settings\Scripts\Strategies\</OutputPath>
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Advance Decline Ratio %28By Bar%29">
+      <HintPath>..\..\..\..\Quantower\Settings\Scripts\Indicators\Advance Decline Ratio (By Bar).dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Xml.Linq" />
@@ -40,7 +43,7 @@
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
     <Reference Include="TradingPlatform.BusinessLayer">
-      <HintPath>..\..\..\..\AMP Quantower\TradingPlatform\v1.111.4\bin\TradingPlatform.BusinessLayer.dll</HintPath>
+      <HintPath>..\..\..\..\AMP Quantower\TradingPlatform\v1.112.1\bin\TradingPlatform.BusinessLayer.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
